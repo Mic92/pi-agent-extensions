@@ -1,15 +1,18 @@
-import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import * as os from "node:os";
 import { join } from "node:path";
 
 // providers.ts consults a shared on-disk usage cache (and rate-limit file)
-// before fetching. Point it at an empty dir *before import*, otherwise a fresh
-// cache.json written by a real pi session on this machine short-circuits
-// refresh() before it ever reaches the resolver under test -- and the test
-// would pass or fail depending on whether pi happened to be running.
-const configHome = mkdtempSync(join(tmpdir(), "statusline-providers-"));
+// before fetching, and falls back to ~/.pi/agent/auth.json for credentials.
+// Point both at an empty dir *before import*: otherwise a fresh cache.json
+// from a live pi session short-circuits refresh() before it reaches the
+// resolver under test, and a real auth.json would turn the fallback path
+// into a network call. homedir() is mocked rather than setting $HOME because
+// Bun resolves os.homedir() once at startup and ignores later env changes.
+const configHome = mkdtempSync(join(os.tmpdir(), "statusline-providers-"));
 process.env.XDG_CONFIG_HOME = configHome;
+mock.module("node:os", () => ({ ...os, homedir: () => configHome }));
 
 const { createUsageController, setApiKeyResolver } = await import("./providers.ts");
 
@@ -39,7 +42,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
-	setApiKeyResolver(async () => undefined);
+	setApiKeyResolver(undefined);
 	rmSync(configHome, { recursive: true, force: true });
 });
 
@@ -63,6 +66,21 @@ test("refresh() resolves to the last snapshot when the API-key resolver throws (
 	const usage = createUsageController(() => {});
 	// Throws before any network I/O: loadAnthropicToken awaits the resolver first.
 	await expect(usage.refresh("anthropic")).resolves.toBeUndefined();
+});
+
+// What session_shutdown now does. The next session must not reach the old
+// closure at all; with no resolver and no auth.json (HOME is empty) the fetch
+// reports missing credentials without touching the network.
+test("a cleared resolver is not invoked; refresh falls back to auth.json", async () => {
+	let calls = 0;
+	setApiKeyResolver(async () => {
+		calls++;
+		return stale();
+	});
+	setApiKeyResolver(undefined);
+	const usage = createUsageController(() => {});
+	await expect(usage.refresh("anthropic")).resolves.toBeUndefined();
+	expect(calls).toBe(0);
 });
 
 // Same rejection, reached from the timer instead of an event handler:

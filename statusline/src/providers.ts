@@ -14,6 +14,10 @@ import { fetchWithCache, getCached, isRateLimited, setRateLimited, writeCachedUs
  * Resolver for live API keys from pi's model registry.
  * Set by the extension on session_start so providers use
  * the auto-refreshed OAuth token instead of the stale auth.json.
+ *
+ * Module-level, and pi re-runs the extension factory per session without
+ * re-importing this module, so whatever is stored here survives session
+ * replacement. The owning session must clear it on session_shutdown.
  */
 let apiKeyResolver: ((provider: string) => Promise<string | undefined>) | undefined;
 
@@ -92,7 +96,7 @@ const DETECTION: Array<{ provider: ProviderName; providerTokens: string[]; model
 	{ provider: "codex", providerTokens: ["openai", "codex"], modelTokens: ["gpt", "o1", "o3", "codex"] },
 ];
 
-export function setApiKeyResolver(resolver: (provider: string) => Promise<string | undefined>): void {
+export function setApiKeyResolver(resolver: ((provider: string) => Promise<string | undefined>) | undefined): void {
 	apiKeyResolver = resolver;
 }
 

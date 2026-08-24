@@ -216,6 +216,11 @@ export default function statusline(pi: ExtensionAPI) {
 		currentCtx = undefined;
 		tuiRef = null;
 		setVcsUpdateCallback(null);
+		// The resolver closes over this session's ctx but lives in providers.ts,
+		// which the next session shares. Drop it so that session falls back to
+		// auth.json until its own session_start rebinds, instead of calling
+		// into a disposed ctx (bindApiKeyResolver only makes that harmless).
+		setApiKeyResolver(undefined);
 	});
 
 	// ── Command ──────────────────────────────────────────────────────────
