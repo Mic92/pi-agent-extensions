@@ -52,6 +52,26 @@ export default function statusline(pi: ExtensionAPI) {
 		}
 	}
 
+	/**
+	 * Route usage fetches through this session's model registry so they use
+	 * pi's auto-refreshed OAuth token rather than a possibly-stale auth.json.
+	 *
+	 * The closure is stored module-level in providers.ts and invoked from
+	 * timers and turn_end, so it outlives the session that created it; every
+	 * ctx getter throws once that session is replaced. Fail soft to the
+	 * auth.json fallback instead of letting the throw reach the host.
+	 */
+	function bindApiKeyResolver(ctx: ExtensionContext): void {
+		if (!ctx.modelRegistry?.getApiKeyForProvider) return;
+		setApiKeyResolver(async (provider) => {
+			try {
+				return await ctx.modelRegistry.getApiKeyForProvider(provider);
+			} catch {
+				return undefined;
+			}
+		});
+	}
+
 	// ── Widget (single line below editor) ────────────────────────────────
 
 	function renderWidget(): void {
@@ -107,19 +127,7 @@ export default function statusline(pi: ExtensionAPI) {
 	// ── Init usage fetch ─────────────────────────────────────────────────
 
 	async function initUsage(ctx: ExtensionContext): Promise<void> {
-		if (ctx.modelRegistry?.getApiKeyForProvider) {
-			// ctx.modelRegistry's getter throws once ctx is stale after session
-			// replacement; this closure is invoked from timer/turn_end-driven
-			// usage refreshes long after that. Fail soft to the auth.json
-			// fallback instead of propagating (a fresh ctx re-registers here).
-			setApiKeyResolver((provider) => {
-				try {
-					return ctx.modelRegistry.getApiKeyForProvider(provider);
-				} catch {
-					return undefined;
-				}
-			});
-		}
+		bindApiKeyResolver(ctx);
 
 		const provider = currentProvider();
 		if (provider) {
@@ -262,19 +270,7 @@ export default function statusline(pi: ExtensionAPI) {
 			}
 
 			if (arg === "refresh") {
-				if (ctx.modelRegistry?.getApiKeyForProvider) {
-					// ctx.modelRegistry's getter throws once ctx is stale after session
-					// replacement; this closure is invoked from timer/turn_end-driven
-					// usage refreshes long after that. Fail soft to the auth.json
-					// fallback instead of propagating (a fresh ctx re-registers here).
-					setApiKeyResolver((provider) => {
-						try {
-							return ctx.modelRegistry.getApiKeyForProvider(provider);
-						} catch {
-							return undefined;
-						}
-					});
-				}
+				bindApiKeyResolver(ctx);
 				resetRateLimit();
 				const provider = currentProvider();
 				if (provider) {
