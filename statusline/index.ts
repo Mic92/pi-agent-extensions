@@ -42,12 +42,44 @@ export default function statusline(pi: ExtensionAPI) {
 	}
 
 	function currentProvider() {
-		return detectProvider(currentCtx?.model);
+		try {
+			return detectProvider(currentCtx?.model);
+		} catch {
+			// ctx is stale after session replacement/reload; drop it and wait
+			// for the next session_start/model_update to re-set it.
+			currentCtx = undefined;
+			return undefined;
+		}
+	}
+
+	/**
+	 * Route usage fetches through this session's model registry so they use
+	 * pi's auto-refreshed OAuth token rather than a possibly-stale auth.json.
+	 *
+	 * The closure is stored module-level in providers.ts and invoked from
+	 * timers and turn_end, so it outlives the session that created it; every
+	 * ctx getter throws once that session is replaced. Fail soft to the
+	 * auth.json fallback instead of letting the throw reach the host.
+	 */
+	function bindApiKeyResolver(ctx: ExtensionContext): void {
+		if (!ctx.modelRegistry?.getApiKeyForProvider) return;
+		setApiKeyResolver(async (provider) => {
+			try {
+				return await ctx.modelRegistry.getApiKeyForProvider(provider);
+			} catch {
+				return undefined;
+			}
+		});
 	}
 
 	// ── Widget (single line below editor) ────────────────────────────────
 
 	function renderWidget(): void {
+		try {
+			if (currentCtx) void currentCtx.model; // stale probe: throws if replaced
+		} catch {
+			currentCtx = undefined;
+		}
 		if (!currentCtx || !enabled || !settings.showBar) {
 			currentCtx?.ui.setWidget("statusline-bar", undefined);
 			return;
@@ -95,9 +127,7 @@ export default function statusline(pi: ExtensionAPI) {
 	// ── Init usage fetch ─────────────────────────────────────────────────
 
 	async function initUsage(ctx: ExtensionContext): Promise<void> {
-		if (ctx.modelRegistry?.getApiKeyForProvider) {
-			setApiKeyResolver((provider) => ctx.modelRegistry.getApiKeyForProvider(provider));
-		}
+		bindApiKeyResolver(ctx);
 
 		const provider = currentProvider();
 		if (provider) {
@@ -146,7 +176,7 @@ export default function statusline(pi: ExtensionAPI) {
 	pi.on("turn_end", async () => {
 		const provider = currentProvider();
 		if (provider) {
-			void usage.refresh(provider);
+			usage.refresh(provider).catch(() => {});
 		}
 	});
 
@@ -175,7 +205,7 @@ export default function statusline(pi: ExtensionAPI) {
 		currentCtx = ctx;
 		const provider = currentProvider();
 		if (provider) {
-			void usage.refresh(provider);
+			usage.refresh(provider).catch(() => {});
 		}
 		renderWidget();
 		tuiRef?.requestRender();
@@ -186,6 +216,11 @@ export default function statusline(pi: ExtensionAPI) {
 		currentCtx = undefined;
 		tuiRef = null;
 		setVcsUpdateCallback(null);
+		// The resolver closes over this session's ctx but lives in providers.ts,
+		// which the next session shares. Drop it so that session falls back to
+		// auth.json until its own session_start rebinds, instead of calling
+		// into a disposed ctx (bindApiKeyResolver only makes that harmless).
+		setApiKeyResolver(undefined);
 	});
 
 	// ── Command ──────────────────────────────────────────────────────────
@@ -201,7 +236,7 @@ export default function statusline(pi: ExtensionAPI) {
 				if (enabled) {
 					setupFooter(ctx);
 					const provider = currentProvider();
-					if (provider) void usage.refresh(provider);
+					if (provider) usage.refresh(provider).catch(() => {});
 					usage.start(currentProvider);
 					renderWidget();
 					ctx.ui.notify("Statusline enabled", "info");
@@ -240,9 +275,7 @@ export default function statusline(pi: ExtensionAPI) {
 			}
 
 			if (arg === "refresh") {
-				if (ctx.modelRegistry?.getApiKeyForProvider) {
-					setApiKeyResolver((provider) => ctx.modelRegistry.getApiKeyForProvider(provider));
-				}
+				bindApiKeyResolver(ctx);
 				resetRateLimit();
 				const provider = currentProvider();
 				if (provider) {

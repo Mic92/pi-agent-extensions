@@ -14,6 +14,10 @@ import { fetchWithCache, getCached, isRateLimited, setRateLimited, writeCachedUs
  * Resolver for live API keys from pi's model registry.
  * Set by the extension on session_start so providers use
  * the auto-refreshed OAuth token instead of the stale auth.json.
+ *
+ * Module-level, and pi re-runs the extension factory per session without
+ * re-importing this module, so whatever is stored here survives session
+ * replacement. The owning session must clear it on session_shutdown.
  */
 let apiKeyResolver: ((provider: string) => Promise<string | undefined>) | undefined;
 
@@ -92,7 +96,7 @@ const DETECTION: Array<{ provider: ProviderName; providerTokens: string[]; model
 	{ provider: "codex", providerTokens: ["openai", "codex"], modelTokens: ["gpt", "o1", "o3", "codex"] },
 ];
 
-export function setApiKeyResolver(resolver: (provider: string) => Promise<string | undefined>): void {
+export function setApiKeyResolver(resolver: ((provider: string) => Promise<string | undefined>) | undefined): void {
 	apiKeyResolver = resolver;
 }
 
@@ -302,21 +306,28 @@ export function createUsageController(onUpdate: (usage: UsageSnapshot | undefine
 	let lastFetchAt = 0;
 
 	async function doRefresh(provider: ProviderName): Promise<UsageSnapshot | undefined> {
-		const promise = fetchUsage(provider);
-		if (!promise) {
-			cached = undefined;
-			onUpdate(undefined);
-			return undefined;
+		// Usage refresh is background telemetry: no failure in here (stale
+		// ctx, network error, parse error) should ever propagate into the
+		// host's event loop. Degrade to the last cached snapshot instead.
+		try {
+			const promise = fetchUsage(provider);
+			if (!promise) {
+				cached = undefined;
+				onUpdate(undefined);
+				return undefined;
+			}
+			const result = await promise;
+			lastFetchAt = Date.now();
+			if (result.windows.length > 0) {
+				cached = result;
+			} else if (cached?.provider !== provider) {
+				cached = undefined;
+			}
+			onUpdate(cached);
+			return cached;
+		} catch {
+			return cached;
 		}
-		const result = await promise;
-		lastFetchAt = Date.now();
-		if (result.windows.length > 0) {
-			cached = result;
-		} else if (cached?.provider !== provider) {
-			cached = undefined;
-		}
-		onUpdate(cached);
-		return cached;
 	}
 
 	return {
@@ -351,11 +362,15 @@ export function createUsageController(onUpdate: (usage: UsageSnapshot | undefine
 			if (timer) clearInterval(timer);
 			const tickMs = Math.min(REFRESH_INTERVAL_S * 1000, 10_000);
 			timer = setInterval(() => {
-				const p = getProvider();
-				if (!p) return;
-				const elapsed = Date.now() - lastFetchAt;
-				if (elapsed >= REFRESH_INTERVAL_S * 1000) {
-					void doRefresh(p);
+				try {
+					const p = getProvider();
+					if (!p) return;
+					const elapsed = Date.now() - lastFetchAt;
+					if (elapsed >= REFRESH_INTERVAL_S * 1000) {
+						doRefresh(p).catch(() => {});
+					}
+				} catch {
+					// never let a timer tick crash the host process
 				}
 			}, tickMs);
 		},
