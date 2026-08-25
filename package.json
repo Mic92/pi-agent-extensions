@@ -29,7 +29,7 @@
       "fetch",
       "inbox",
       "notify",
-      "permission-gate",
+      "nushell",
       "python",
       "questionnaire",
       "slow-mode",
