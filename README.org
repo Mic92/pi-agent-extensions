@@ -501,7 +501,7 @@ Tab/←→ navigate • ↑↓ select • Enter confirm • Esc cancel
 - *License*: MIT
 - *Env*: =$PI_INBOX= (socket path), =$PI_SESSION_ID=
 
-*Description*: Tool calls are synchronous, so once a background job is detached the agent normally has to poll. This extension listens on =$XDG_RUNTIME_DIR/pi-inbox/<pid>.sock= and exports the path as =$PI_INBOX= to every tool subprocess. Each connection becomes one message (JSON ={"source": "...", "text": "..."}= or plain text, 16 KB cap) that is delivered right away when the agent is idle, otherwise as a follow-up after the current run, and rendered as a compact =▌inbox <source>= block.
+*Description*: Tool calls are synchronous, so once a background job is detached the agent normally has to poll. This extension listens on =$XDG_RUNTIME_DIR/pi-inbox/<pid>.sock= and exports the path as =$PI_INBOX= to every tool subprocess. Each connection becomes one message (JSON ={"source": "...", "pid": 123, "text": "..."}= or plain text, 16 KB cap) that is delivered right away when the agent is idle, otherwise as a follow-up after the current run, and rendered as a compact =▌inbox <source> pid <n>= block. When =pid= is omitted the sender's PID is read from the socket peer credentials (=SO_PEERCRED= / =LOCAL_PEERPID= via =python3=), so the agent can tell which of its background jobs is reporting.
 
 #+begin_src bash
 echo '{"source":"ci","text":"build green"}' | nc -U "$PI_INBOX"
