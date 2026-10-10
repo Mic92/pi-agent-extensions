@@ -7,7 +7,8 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createGate } from "../permission-gate/index.ts";
+import permissionGate from "../permission-gate/index.ts";
+import { EVENTS } from "../permission-gate/types.ts";
 import { analyzeNu } from "./gate.ts";
 
 const hasNu = (() => {
@@ -23,8 +24,10 @@ describe.skipIf(!hasNu)("nushell gate (headless)", () => {
 		delete process.env.PI_NO_GATE;
 		process.env.XDG_CONFIG_HOME = xdg = fs.mkdtempSync(path.join(os.tmpdir(), "nugate-"));
 		const handlers: Record<string, (e: unknown, c: unknown) => Promise<unknown>> = {};
+		const listeners: Record<string, (p: unknown) => void> = {};
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		createGate({ on: (n: string, fn: any) => { handlers[n] = fn; }, events: { on: () => () => {}, emit() {} }, registerCommand() {} } as any, analyzeNu("nu"));
+		permissionGate({ on: (n: string, fn: any) => { handlers[n] = fn; }, events: { on: (n: string, fn: any) => { listeners[n] = fn; return () => {}; }, emit() {} }, registerCommand() {} } as any);
+		listeners[EVENTS.analyzer](analyzeNu("nu"));
 		const ctx = { hasUI: false, cwd: xdg };
 		await handlers.session_start({}, ctx);
 		run = (command, toolName = "bash") => handlers.tool_call({ toolName, input: { command } }, ctx);

@@ -38,8 +38,8 @@ const HELPERS: GateHelpers = {
 
 /**
  * How a `bash` tool command is turned into pipelines for the argv rules.
- * The default is the POSIX parser (shell.ts); the nushell extension plugs
- * in nu's own parser. `unverified` names a reason the analysis is
+ * The default is the POSIX parser (shell.ts); a shell extension (nushell)
+ * replaces it by emitting EVENTS.analyzer. `unverified` names a reason the analysis is
  * incomplete (parse error, runtime-built command name) — that prompts on
  * its own, since an unparsed script is unverified rather than safe.
  */
@@ -50,15 +50,14 @@ const analyzeSh: Analyze = async (command) => ({ pipelines: collectPipelines(com
 // ── extension ────────────────────────────────────────────────────────────
 
 export default function permissionGate(pi: ExtensionAPI) {
-	createGate(pi, analyzeSh);
-}
-
-export function createGate(pi: ExtensionAPI, analyze: Analyze): void {
 	// PI_NO_GATE=1 disables the extension entirely (prompts and block
 	// rules). Exact match on "1": treating any non-empty value as a
 	// disable made PI_NO_GATE=0 turn the gate off — the standard env-var
 	// footgun, and this one is a kill switch.
 	if (process.env.PI_NO_GATE === "1") return;
+
+	let analyze: Analyze = analyzeSh;
+	pi.events.on(EVENTS.analyzer, (a) => { analyze = a as Analyze; });
 
 	let promptsEnabled = true;
 	let layers: ConfigLayers = { userCode: {}, userJson: {}, project: {} };

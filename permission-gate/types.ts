@@ -18,6 +18,8 @@ export const EVENTS = {
 	resolved: "permission-gate:resolved",
 	/** Listened for while a prompt is open; payload `{ allow?, reason? }`. */
 	respond: "permission-gate:respond",
+	/** Emitted by shell extensions (e.g. nushell) with an `Analyze` as payload; replaces the POSIX parser. */
+	analyzer: "permission-gate:analyzer",
 } as const;
 
 /** How a matched rule is handled. */

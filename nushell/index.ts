@@ -1,9 +1,8 @@
 /**
- * Replaces the `bash` tool's interpreter with Nushell and gates it with
- * permission-gate's rules, parsed by nu itself (gate.ts). Supersedes the
- * permission-gate extension (same /gate command, config and rules); load
- * one or the other. Without `nu` in PATH it degrades to plain
- * permission-gate over the built-in bash tool.
+ * Replaces the `bash` tool's interpreter with Nushell. If permission-gate is
+ * loaded too, it is handed nu's own parser (gate.ts) via EVENTS.analyzer, so
+ * the same rules, /gate command and config apply to nu scripts. Without `nu`
+ * in PATH this extension does nothing.
  *
  * `$XDG_CONFIG_HOME/nushell/pi.nu` is sourced before every script if it exists.
  */
@@ -14,7 +13,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createBashTool } from "@mariozechner/pi-coding-agent";
-import permissionGate, { createGate } from "../permission-gate/index.ts";
+import { EVENTS } from "../permission-gate/types.ts";
 import { analyzeNu } from "./gate.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -22,9 +21,10 @@ export default function (pi: ExtensionAPI) {
 	try {
 		nu = execFileSync("which", ["nu"], { encoding: "utf8" }).trim();
 	} catch {
-		return permissionGate(pi);
+		return;
 	}
-	createGate(pi, analyzeNu(nu));
+	// session_start: every extension's listeners exist by then, whatever the load order.
+	pi.on("session_start", () => { pi.events.emit(EVENTS.analyzer, analyzeNu(nu)); });
 
 	// There is no tty: nu would draw box tables clipped to 80 columns with
 	// "..." cells. Light borders, no index column and a wide render keep

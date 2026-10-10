@@ -15,7 +15,7 @@ This is **pi-agent-extensions** — a collection of [pi](https://github.com/mari
 | `permission-gate/` | Prompt or block dangerous bash commands (regex or tokenized-argv rules) |
 | `statusline/` | Condensed status bar: model, usage, context, VCS (git/jj), cost |
 | `direnv/` | Loads direnv environment variables on session start and after bash commands |
-| `nushell/` | Runs the `bash` tool through Nushell and gates it with permission-gate's rules via nu's parser (supersedes loading `permission-gate/` directly) |
+| `nushell/` | Runs the `bash` tool through Nushell and gives permission-gate nu's parser (plugs into `permission-gate/` via `EVENTS.analyzer`) |
 | `fetch/` | HTTP request tool — fetches URLs, downloads files, shows curl equivalent |
 | `questionnaire/` | Multi-question tool for LLM-driven user input |
 | `inbox/` | Per-session unix socket (`$PI_INBOX`) turning external events into follow-up messages |
