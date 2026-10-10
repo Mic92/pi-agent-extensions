@@ -17,9 +17,9 @@ import { EVENTS } from "../permission-gate/types.ts";
 import { analyzeNu } from "./gate.ts";
 
 export default function (pi: ExtensionAPI) {
-	let nu: string;
+	const nu = "nu";
 	try {
-		nu = execFileSync("which", ["nu"], { encoding: "utf8" }).trim();
+		execFileSync(nu, ["--help"], { stdio: "ignore" });
 	} catch {
 		return;
 	}
